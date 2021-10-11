@@ -42,6 +42,16 @@ class TileSerial:
     class MessageSendException(Exception):
         pass
 
+    class NoMessagesFound(Exception):
+        pass
+
+    class InvalidMessageID(Exception):
+        pass
+
+    class BadParameters(Exception):
+        pass
+
+
     def connect(self, port):
         self.port = port
         self.connection = serial.Serial(self.port, baudrate=115200)
@@ -68,52 +78,46 @@ class TileSerial:
         else:
             raise self.MessageSendException
 
-    def read_expectantly(self, expect):
+    def read_expectantly(self, expect, return_list=False):
         # Reads until we receive a full message containing the string passed in `expect`
+        _lines = []
 
-        # Optimistically try a cheeky read_until
-        r = self.connection.read_until()
-        self.log_write(r, annotation='<')
-        _lines = [r]
+        # TODO: This function needs to be rewritten to be less jank and more elegant.
+        time.sleep(0.1)
+        if self.connection.in_waiting:
+            # Yes, there's more in the buffer, lets read it all and see if any of that matches.
+            while self.connection.in_waiting:
+                # We have to do this in case there's a ton of messages that need to be received.
+                # Can't just assume 3 tries will do it (see below)
+                r = self.connection.read_until()
+                self.check_common_exceptions(r.decode('utf-8'))
+                self.log_write(r, annotation='<')
+                if r.strip() != '$':
+                    _lines.append(r)
 
         if lines_contain(_lines, expect):
             # We got what we wanted, let's return
+            return line_containing(_lines, expect, return_multiple=return_list)
+
+        # The buffer is empty but we still haven't received what we wanted, lets wait 200ms
+        time.sleep(0.1)
+        for i in range(1, 3):
+            # self.log_write('Read Retry' + ' #' + str(i), annotation='#')
+            r = self.connection.read_until()
+            self.check_common_exceptions(r.decode('utf-8'))
+            self.log_write(r, annotation='<')
+            _lines.append(r)
+            if lines_contain(_lines, expect):
+                break
+
+            # time.sleep(0.2)
+
+        if lines_contain(_lines, expect):
             return line_containing(_lines, expect)
-
         else:
-            # Okay, we didn't get what we expected from the first line, so let's see if
-            # there's more in the buffer
+            raise self.NoExpectedResponse
 
-            if self.connection.in_waiting:
-                # Yes, there's more in the buffer, lets read it all and see if any of that matches.
-                while self.connection.in_waiting:
-                    # We have to do this in case there's a ton of messages that need to be received.
-                    # Can't just assume 3 tries will do it (see below)
-                    r = self.connection.read_until()
-                    self.log_write(r, annotation='<')
-                    _lines.append(r)
-
-            if lines_contain(_lines, expect):
-                # We got what we wanted, let's return
-                return line_containing(_lines, expect)
-
-            # The buffer is empty but we still haven't received what we wanted, lets wait 200ms
-            for i in range(1, 3):
-                self.log_write('Read Retry' + ' #' + str(i), annotation='#')
-                r = self.connection.read_until()
-                self.log_write(r, annotation='<')
-                _lines.append(r)
-                if lines_contain(_lines, expect):
-                    break
-
-                time.sleep(0.2)
-
-            if lines_contain(_lines, expect):
-                return line_containing(_lines, expect)
-            else:
-                raise self.NoExpectedResponse
-
-    def write_read(self, message, expect=None):
+    def write_read(self, message, expect=None, return_list=False):
         # Writes a message and returns the first list containing the expect string.
         # If expect is not set, returns the first line.
 
@@ -121,7 +125,7 @@ class TileSerial:
         self.connection.write(message)
         self.log_write(message, annotation='>')
         if expect:
-            r = self.read_expectantly(expect)
+            r = self.read_expectantly(expect, return_list=return_list)
         else:
             r = self.connection.read_until().decode('utf-8')
 
@@ -171,8 +175,8 @@ class TileSerial:
 
         return gps_stats
 
-    def get_message_count(self, unread_only=False):
-        # Returns the count (int) of messages on the tile
+    def get_messagess_inbound_count(self, unread_only=False):
+        # Returns the count (int) of inbound messages on the tile
         if unread_only:
             line = self.write_read('$MM C=U', expect='$MM ')
         else:
@@ -180,8 +184,48 @@ class TileSerial:
         count = line[4:-4]
         return int(count)
 
+    def get_messages_outbound_count(self):
+        # Returns the count (int) of outbound messages on the tile
+        line = self.write_read('$MT C=U', expect='$MT ')
+        count = line[4:-4]
+        return int(count)
+
+    def get_messages_outbound_list(self):
+        # Returns a list of outbound message IDs on the tile
+        out = []
+        lines = self.write_read('$MT L=U', expect='$MT ', return_list=True)
+        for line in lines:
+            line = line[4:-4]
+
+            parts = line.strip().split(',')
+            print(parts)
+            obm = OutBoundMessage()
+            obm.hex_data = parts[0]
+            obm.utf8_data = bytes.fromhex(obm.hex_data).decode('utf-8')
+            obm.message_id = parts[1]
+            obm.epoch_seconds_received = parts[2]
+            out.append(obm)
+
+        return out
+
+    def delete_all_outbound_messages(self):
+        self.write_read('$MT D=U', expect='$MT ')
+        return True
+
+
     def get_firmware_version(self):
         # Returns the firmware version
         return self.write_read('$FV', expect='$FV ')
+
+    def check_common_exceptions(self, message):
+        if 'ERR,DBXNOMORE' in message:
+            raise self.NoMessagesFound
+
+        if 'ERR,DBXINVMSGID' in message:
+            raise self.InvalidMessageID
+
+        if 'ERR,BADPARAM' in message:
+            raise self.BadParameters
+
 
 

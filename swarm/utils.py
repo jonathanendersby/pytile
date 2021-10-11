@@ -9,12 +9,19 @@ def lines_contain(lines, expect):
     return False
 
 
-def line_containing(lines, expect):
+def line_containing(lines, expect, return_multiple=False):
     # Returns the first line to contain the expect string.
+    out = []
     for line in lines:
         # print('### ', line.decode('utf-8').strip())
         if expect in line.decode('utf-8'):
-            return line.decode('utf-8')
+            if return_multiple:
+                out.append(line.decode('utf-8'))
+            else:
+                return line.decode('utf-8')
+
+    if return_multiple:
+        return out
 
 
 def checksum(s):
@@ -56,6 +63,19 @@ class GPSStats:
         return out
 
 
+class OutBoundMessage:
+    message_id = None
+    epoch_seconds_received = None
+    hex_data = None
+    utf8_data = None
+
+    def __str__(self):
+        if self.utf8_data:
+            return 'Swarm Message ' + self.message_id + ': "' + self.utf8_data + '"'
+        else:
+            return 'Swarm Message ' + self.message_id
+
+
 GNSS_FIX_TYPES = {
     'NF': 'No Fix',
     'DR': 'Dead Reckoning',
@@ -66,3 +86,4 @@ GNSS_FIX_TYPES = {
     'RK': 'GNSS + Dead Reckoning',
     'TT': 'Time Only',
 }
+
