@@ -39,11 +39,13 @@ def __main__():
     print(gps_stats.verbose())
     print(tile.get_message_count(), 'unread messages.')
 
-    print('\n10 second monitor:')
+    print('\n10 second monitor running... (Look in tile.log)')
     tile.read_monitor(seconds=10)
 
-    # Send a message - Commented out for obvious reasons.
-    # msg_id = tile.send_swarm_message('This is a test message sent from the Swarm Python Module', application_id='5555')
-    # print(msg_id)
+    # Send a message - setting defaults to False to avoid sending by mistake.
+    if settings.SWARM_EXAMPLE_SENDS_A_TEST_MESSAGE:
+        msg_id = tile.send_swarm_message('This is a test message sent from the Swarm Python Module',
+                                         application_id='5555')
+        print(msg_id)
 
 __main__()
