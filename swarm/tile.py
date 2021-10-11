@@ -9,6 +9,7 @@ class TileSerial:
     connection = None
     logging = False
     log_file = None
+    port = None
 
     def __init__(self):
         pass
@@ -42,9 +43,11 @@ class TileSerial:
         pass
 
     def connect(self, port):
-        self.connection = serial.Serial(port, baudrate=115200)
+        self.port = port
+        self.connection = serial.Serial(self.port, baudrate=115200)
         self.connection.timeout = 2
-        self.log_write('Tile Serial Connected on' + port, annotation='#')
+        self.log_write('Tile Serial Connected on' + self.port, annotation='#')
+
 
     def read_monitor(self, seconds):
         # Helpful for printing out the output for a few seconds
